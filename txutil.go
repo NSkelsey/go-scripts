@@ -20,20 +20,24 @@ var magic btcwire.BitcoinNet
 var connCfg *btcrpcclient.ConnConfig
 
 func pickNetwork(net btcwire.BitcoinNet) {
+	var port string
 	switch net {
 	case btcwire.TestNet3:
 		magic = btcwire.TestNet3
 		currnet = btcnet.TestNet3Params
+		port = "18332"
 	case btcwire.MainNet:
 		magic = btcwire.MainNet
 		currnet = btcnet.MainNetParams
+		port = "8332"
 	case btcwire.SimNet:
 		magic = btcwire.SimNet
 		currnet = btcnet.SimNetParams
+		port = "18554"
 	}
 
 	connCfg = &btcrpcclient.ConnConfig{
-		Host:         "localhost:" + currnet.DefaultPort,
+		Host:         "localhost:" + port,
 		User:         "bitcoinrpc",
 		Pass:         "EhxWGNKr1Z4LLqHtfwyQDemCRHF8gem843pnLj19K4go",
 		HttpPostMode: true,
@@ -111,5 +115,10 @@ func sumOutputs(tx *btcwire.MsgTx) (val int64) {
 func wifToAddr(wifkey *btcutil.WIF) btcutil.Address {
 	pubkey := wifkey.SerializePubKey()
 	addr, _ := btcutil.NewAddressPubKeyHash(pubkey, &currnet)
+	return addr
+}
+
+func newAddr(client *btcrpcclient.Client) btcutil.Address {
+	addr, _ := client.GetNewAddress()
 	return addr
 }
