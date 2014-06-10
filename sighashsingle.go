@@ -1,23 +1,22 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/conformal/btcscript"
 	"github.com/conformal/btcwire"
 )
 
-var MinNeed = int64(5000)
+var minNeeded = int64(5000)
 
-func main() {
+func buildSigHashSingle() *btcwire.MsgTx {
 
 	pickNetwork(btcwire.TestNet3)
 	client := makeRpcClient()
 	defer client.Shutdown()
 
 	// RPC to setup previous TX
-	oldTxOut, outpoint, wifkey := selectUnspent(client, 5e3)
+	oldTxOut, outpoint, wifkey := selectUnspent(client, minNeeded)
 
 	// Transaction building
 
@@ -47,5 +46,10 @@ func main() {
 	blank.PkScript = oldTxOut.PkScript
 	blank.Value = 556
 
-	fmt.Printf("Tx: %s\n", toHex(msgtx))
+	return msgtx
 }
+
+//func main() {
+//	tx := buildSigHashSingle()
+//	fmt.Printf("%s\n", toHex(tx))
+//}
