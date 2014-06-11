@@ -54,7 +54,40 @@ func makeRpcClient() *btcrpcclient.Client {
 	client.GetBestBlock()
 	return client
 }
+
+func specificUnspent(client *btcrpcclient.Client, targetAmnt int64) (btcwire.TxOut, btcwire.OutPoint, btcutil.WIF) {
+	// gets an unspent output with an exact amount associated with it
+	list, err := client.ListUnspent()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var txOut *btcwire.TxOut
+	var outPoint *btcwire.OutPoint
+	var privKey *btcutil.WIF
+
+	for i := 0; i < len(list); i++ {
+		prevJson := list[i]
+		inAmnt := toSatoshi(prevJson.Amount)
+		if inAmnt == targetAmnt {
+			// Found one, lets use it
+			prevHash, _ := btcwire.NewShaHashFromStr(prevJson.TxId)
+			outPoint = btcwire.NewOutPoint(prevHash, prevJson.Vout)
+			script, _ := hex.DecodeString(prevJson.ScriptPubKey)
+			txOut = btcwire.NewTxOut(inAmnt, script)
+
+			prevAddress, _ := btcutil.DecodeAddress(prevJson.Address, &currnet)
+			wifkey, _ := client.DumpPrivKey(prevAddress)
+			return *txOut, *outPoint, *wifkey
+		}
+	}
+
+	log.Fatalf("failed to a find an unspent with %s", targetAmnt)
+	return *txOut, *outPoint, *privKey
+}
+
 func selectUnspent(client *btcrpcclient.Client, minAmount int64) (btcwire.TxOut, btcwire.OutPoint, btcutil.WIF) {
+	// selects an unspent outpoint that is funded over the minAmount
 	list, err := client.ListUnspent()
 	if err != nil {
 		log.Fatal(err)
@@ -121,4 +154,27 @@ func wifToAddr(wifkey *btcutil.WIF) btcutil.Address {
 func newAddr(client *btcrpcclient.Client) btcutil.Address {
 	addr, _ := client.GetNewAddress()
 	return addr
+}
+
+func prevOutVal(client *btcrpcclient.Client, tx *btcwire.MsgTx) int64 {
+	// requires an rpc client and outpoints within wallets realm
+	total := int64(0)
+	for i := range tx.TxIn {
+		txin := tx.TxIn[i]
+		prevTxHash := txin.PreviousOutpoint.Hash
+		var tx *btcutil.Tx
+		tx, err := client.GetRawTransaction(&prevTxHash)
+		if err != nil {
+			log.Fatalf("failed to find the tx, (its not in the wallet): %s\n", err)
+		}
+		vout := txin.PreviousOutpoint.Index
+		txout := tx.MsgTx().TxOut[vout]
+		total += txout.Value
+	}
+	return total
+}
+
+// Converts a float bitcoin into satoshi
+func toSatoshi(m float64) int64 {
+	return int64(float64(btcutil.SatoshiPerBitcoin) * m)
 }
