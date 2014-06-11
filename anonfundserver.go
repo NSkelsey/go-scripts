@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/conformal/btcrpcclient"
 )
 
+var client *btcrpcclient.Client
+
 type AnonTxMessage struct {
-	Tx string
+	Tx    string
+	Value int64
 }
 
 type ProofMessage struct {
@@ -15,6 +20,7 @@ type ProofMessage struct {
 }
 
 func handler(w http.ResponseWriter, req *http.Request) {
+	log.Printf("Request!: %s\n", req.Method)
 	if req.Method != "POST" {
 		http.Error(w, "Method not allowed", 405)
 		return
@@ -47,7 +53,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	}
 	// Generate the anonymous tx
 	fundingtx := buildSigHashSingle()
-	message := AnonTxMessage{Tx: toHex(fundingtx)}
+	prevVal := prevOutVal(client, fundingtx)
+	message := AnonTxMessage{Tx: toHex(fundingtx), Value: prevVal}
 	bytes, err := json.Marshal(message)
 	if err != nil {
 		http.Error(w, "Cannot serialize the tx", 500)
@@ -55,6 +62,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(bytes)
+	log.Println("Message sent")
 }
 
 func check(proof ProofMessage) bool {
@@ -63,9 +71,12 @@ func check(proof ProofMessage) bool {
 }
 
 func main() {
+	client = makeRpcClient()
 	http.HandleFunc("/", handler)
-	log.Printf("About to listen on 1050. Go to https://127.0.0.1:1050/")
-	err := http.ListenAndServeTLS("0.0.0.0:1050", "cert.pem", "key.pem", nil)
+	where := "0.0.0.0:1050"
+	log.Printf("Listening on %s\n", where)
+	err := http.ListenAndServeTLS(where, "cert.pem", "key.pem", nil)
+	//err := http.ListenAndServe(where, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/conformal/btcwire"
 )
 
-var minNeeded = int64(5000)
+var minNeeded = int64(100000)
 
 func buildSigHashSingle() *btcwire.MsgTx {
 
@@ -25,7 +25,7 @@ func buildSigHashSingle() *btcwire.MsgTx {
 	// Change txout for us -- blank for the moment
 
 	// notice amount in
-	change := changeOutput(oldTxOut.Value, 2555, wifToAddr(&wifkey))
+	change := changeOutput(oldTxOut.Value, minNeeded-10000, wifToAddr(&wifkey))
 	// Blank permutable txout for users to play with
 	blank := btcwire.NewTxOut(0, []byte{})
 
