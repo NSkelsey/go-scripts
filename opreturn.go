@@ -8,7 +8,9 @@ import (
 	"github.com/conformal/btcwire"
 )
 
-func build(net btcwire.BitcoinNet) *btcwire.MsgTx {
+//
+
+func NewDust(net btcwire.BitcoinNet) *btcwire.MsgTx {
 	pickNetwork(btcwire.TestNet3)
 	client := makeRpcClient()
 	defer client.Shutdown()

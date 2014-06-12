@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 
+	"github.com/conformal/btcnet"
 	"github.com/conformal/btcrpcclient"
+	"github.com/conformal/btcwire"
 )
 
 var client *btcrpcclient.Client
+var currnet *btcnet.Params
 
 type AnonTxMessage struct {
 	Tx    string
@@ -37,23 +41,31 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	log.Printf("POST: %s\n", buf)
+	logger.Printf("POST: %s\n", buf)
 
 	var proof ProofMessage
 	if err := json.Unmarshal(buf, &proof); err != nil {
-		log.Printf("failed to parse json: %s\n", err)
+		logger.Printf("failed to parse json: %s\n", err)
 		http.Error(w, "bad json", 500)
 		return
 	}
 
 	if !check(proof) {
-		log.Printf("Did not pass test\n")
+		logger.Printf("Did not pass test\n")
 		http.Error(w, "bad proof", 405)
 		return
 	}
 	// Generate the anonymous tx
-	fundingtx := buildSigHashSingle()
-	prevVal := prevOutVal(client, fundingtx)
+	fundingtx, err := buildSigHashSingle(client, currnet)
+	if err != nil {
+		logger.Println(err)
+		http.Error(w, "Bad", 500)
+	}
+	prevVal, err := prevOutVal(fundingtx, client)
+	if err != nil {
+		logger.Println(err)
+		http.Error(w, "Bad", 500)
+	}
 	message := AnonTxMessage{Tx: toHex(fundingtx), Value: prevVal}
 	bytes, err := json.Marshal(message)
 	if err != nil {
@@ -62,7 +74,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(bytes)
-	log.Println("Message sent")
+	logger.Println("Message sent")
 }
 
 func check(proof ProofMessage) bool {
@@ -71,13 +83,17 @@ func check(proof ProofMessage) bool {
 }
 
 func main() {
-	client = makeRpcClient()
+
+	logger = log.New(os.Stdout, "", log.Ltime)
+	client, currnet = setupNet(btcwire.TestNet3)
+	defer client.Shutdown()
+
 	http.HandleFunc("/", handler)
 	where := "0.0.0.0:1050"
-	log.Printf("Listening on %s\n", where)
+	logger.Printf("Listening on %s\n", where)
 	err := http.ListenAndServeTLS(where, "cert.pem", "key.pem", nil)
 	//err := http.ListenAndServe(where, nil)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 }

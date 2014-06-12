@@ -1,31 +1,34 @@
 package main
 
 import (
-	"log"
-
+	"github.com/conformal/btcnet"
+	"github.com/conformal/btcrpcclient"
 	"github.com/conformal/btcscript"
 	"github.com/conformal/btcwire"
 )
 
-var minNeeded = int64(100000)
+var forUse int64 = 100000
+var FEE int64 = 10000
 
-func buildSigHashSingle() *btcwire.MsgTx {
-
-	pickNetwork(btcwire.TestNet3)
-	client := makeRpcClient()
-	defer client.Shutdown()
+func buildSigHashSingle(client *btcrpcclient.Client, net *btcnet.Params) (*btcwire.MsgTx, error) {
 
 	// RPC to setup previous TX
-	oldTxOut, outpoint, wifkey := selectUnspent(client, minNeeded)
+	txInParams, err := selectUnspent(forUse+FEE, client, net)
+	if err != nil {
+		return nil, err
+	}
+
+	oldTxOut := txInParams.TxOut
+	outpoint := txInParams.OutPoint
+	wifkey := txInParams.Wif
 
 	// Transaction building
 
-	txin := btcwire.NewTxIn(&outpoint, []byte{})
-
-	// Change txout for us -- blank for the moment
+	txin := btcwire.NewTxIn(outpoint, []byte{})
 
 	// notice amount in
-	change := changeOutput(oldTxOut.Value, minNeeded-10000, wifToAddr(&wifkey))
+	total := oldTxOut.Value
+	change := changeOutput(total-(forUse+FEE), wifToAddr(wifkey, net))
 	// Blank permutable txout for users to play with
 	blank := btcwire.NewTxOut(0, []byte{})
 
@@ -38,18 +41,13 @@ func buildSigHashSingle() *btcwire.MsgTx {
 	privkey := wifkey.PrivKey.ToECDSA()
 	scriptSig, err := btcscript.SignatureScript(msgtx, 0, subscript, btcscript.SigHashSingle, privkey, true)
 	if err != nil {
-		log.Fatal("ScriptSig failed", err)
+		logger.Fatal("ScriptSig failed", err)
 	}
 
 	txin.SignatureScript = scriptSig
 	// This demonstrates that we can sign and then permute a txout
-	blank.PkScript = oldTxOut.PkScript
-	blank.Value = 556
+	//msgtx.TxOut[1].PkScript = oldTxOut.PkScript
+	blank.Value = forUse
 
-	return msgtx
+	return msgtx, nil
 }
-
-//func main() {
-//	tx := buildSigHashSingle()
-//	fmt.Printf("%s\n", toHex(tx))
-//}
