@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/conformal/btcnet"
@@ -113,6 +114,28 @@ func specificUnspent(targetAmnt int64, client *btcrpcclient.Client, net *btcnet.
 	return nil, errors.New("Could not find a txout with specific amount.")
 }
 
+// composeUnspents Builds out a set of TxInParams that can be used to spend minAmount of bitcoin
+func composeUnspents(minAmount int64, client *btcrpcclient.Client, net *btcnet.Params) ([]*TxInParams, int64, error) {
+	// Arbitrary constant!
+	maxIns := 50
+
+	totalIn := int64(0)
+	inParamSet := make([]*TxInParams, 0)
+	for i := 0; i < maxIns; i++ {
+		txInParam, err := selectUnspent(minAmount/40, client, net)
+		if err != nil {
+			return nil, totalIn, err
+		}
+		inParamSet = append(inParamSet, txInParam)
+		totalIn += txInParam.TxOut.Value
+		if totalIn >= minAmount {
+			return inParamSet, totalIn, nil
+		}
+	}
+	msg := fmt.Sprintf("Do not have enough coins to compose input: %d, from %d", minAmount, totalIn)
+	return inParamSet, 0, errors.New(msg)
+}
+
 // selectUnspent picks an unspent output that has atleast minAmount (sats) associated with it.
 // It throws an error otherwise
 func selectUnspent(minAmount int64, client *btcrpcclient.Client, net *btcnet.Params) (*TxInParams, error) {
@@ -164,13 +187,13 @@ func toHex(tx *btcwire.MsgTx) string {
 }
 
 // generates a change output funding provided addr
-func changeOutput(change int64, addr btcutil.Address) *btcwire.TxOut {
-	script, err := btcscript.PayToAddrScript(addr)
-	if err != nil {
-		log.Fatalf("failed to create script: %s\n", err)
+func changeOutput(change, dustAmnt int64, addr btcutil.Address) (*btcwire.TxOut, bool) {
+	if change < dustAmnt {
+		return nil, false
 	}
+	script, _ := btcscript.PayToAddrScript(addr)
 	txout := btcwire.NewTxOut(change, script)
-	return txout
+	return txout, true
 }
 
 // sumOutputs derives the values in satoshis of tx.
@@ -192,13 +215,13 @@ func wifToAddr(wifkey *btcutil.WIF, net *btcnet.Params) btcutil.Address {
 	return addr
 }
 
-// Gets a new address from an rpc client, catches all errors
-func newAddr(client *btcrpcclient.Client) btcutil.Address {
+// Gets a new address from an rpc client
+func newAddr(client *btcrpcclient.Client) (btcutil.Address, error) {
 	addr, err := client.GetNewAddress()
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	return addr
+	return addr, nil
 }
 
 // prevOutVal looks up all the values of the oupoints used in the current tx

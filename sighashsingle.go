@@ -11,7 +11,6 @@ var forUse int64 = 100000
 var FEE int64 = 10000
 
 func buildSigHashSingle(client *btcrpcclient.Client, net *btcnet.Params) (*btcwire.MsgTx, error) {
-
 	// RPC to setup previous TX
 	txInParams, err := selectUnspent(forUse+FEE, client, net)
 	if err != nil {
