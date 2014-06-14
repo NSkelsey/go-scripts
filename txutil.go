@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 
+	"github.com/conformal/btcec"
 	"github.com/conformal/btcnet"
 	"github.com/conformal/btcrpcclient"
 	"github.com/conformal/btcscript"
@@ -94,14 +98,14 @@ func rpcTxPick(exact bool, targetAmnt int64, params BuilderParams) (*TxInParams,
 		_amnt, _ := btcutil.NewAmount(prevJson.Amount)
 		amnt := int64(_amnt)
 		txid := prevJson.TxId
+		prevHash, _ := btcwire.NewShaHashFromStr(txid)
+		outPoint := btcwire.NewOutPoint(prevHash, prevJson.Vout)
 
-		_, contained := params.PendingSet[txid]
+		_, contained := params.PendingSet[outPointStr(outPoint)]
 		// This unpsent is in the pending set and it either exactly equals the target or
 		// has a value above that target
 		if !contained && (exact && targetAmnt == amnt || !exact && targetAmnt <= amnt) {
 			// Found one, lets use it
-			prevHash, _ := btcwire.NewShaHashFromStr(txid)
-			outPoint := btcwire.NewOutPoint(prevHash, prevJson.Vout)
 			script, _ := hex.DecodeString(prevJson.ScriptPubKey)
 			// None of the above ~should~ ever throw errors
 			txOut := btcwire.NewTxOut(amnt, script)
@@ -116,7 +120,7 @@ func rpcTxPick(exact bool, targetAmnt int64, params BuilderParams) (*TxInParams,
 				OutPoint: outPoint,
 				Wif:      wifkey,
 			}
-			params.PendingSet[txid] = struct{}{}
+			params.PendingSet[outPointStr(outPoint)] = struct{}{}
 			return &inParams, nil
 		}
 	}
@@ -149,7 +153,7 @@ func composeUnspents(minAmount int64, params BuilderParams) ([]*TxInParams, int6
 	totalIn := int64(0)
 	inParamSet := make([]*TxInParams, 0)
 	for i := 0; i < maxIns; i++ {
-		txInParam, err := selectUnspent(params.DustAmnt, params)
+		txInParam, err := selectUnspent(minAmount/20, params)
 		if err != nil {
 			return nil, totalIn, err
 		}
@@ -190,12 +194,19 @@ func sumOutputs(tx *btcwire.MsgTx) (val int64) {
 	return val
 }
 
-func sumInputs(inParamSet) (val int64) {
+func sumInputs(inParamSet []*TxInParams) (val int64) {
 	val = 0
 	for _, inpParam := range inParamSet {
-		val += inpPara.TxOut.Value
+		val += inpParam.TxOut.Value
 	}
 	return val
+}
+
+func newWifKeyPair(net *btcnet.Params) *btcutil.WIF {
+	curve := elliptic.P256()
+	priv, _ := ecdsa.GenerateKey(curve, rand.Reader)
+	wif, _ := btcutil.NewWIF((*btcec.PrivateKey)(priv), net, true)
+	return wif
 }
 
 func wifToAddr(wifkey *btcutil.WIF, net *btcnet.Params) btcutil.Address {
@@ -236,7 +247,14 @@ func prevOutVal(tx *btcwire.MsgTx, client *btcrpcclient.Client) (int64, error) {
 	return total, nil
 }
 
-func dataAddr(raw []byte, net *btcnet.Params) btcutil.Address {
-	addr, _ := btcutil.NewAddressPubKeyHash(raw, net)
+func dataAddr(raw []byte, net *btcnet.Params) *btcutil.AddressPubKeyHash {
+	addr, err := btcutil.NewAddressPubKeyHash(raw, net)
+	if err != nil {
+		log.Println(err)
+	}
 	return addr
+}
+
+func outPointStr(outpoint *btcwire.OutPoint) string {
+	return fmt.Sprintf("%s[%d]", outpoint.Hash.String(), outpoint.Index)
 }

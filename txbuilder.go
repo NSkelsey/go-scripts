@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -37,9 +38,9 @@ func CreateParams() BuilderParams {
 	client, params := setupNet(btcwire.TestNet3)
 
 	bp := BuilderParams{
-		Fee:        10000,
+		Fee:        50000,
 		DustAmnt:   546,
-		InTarget:   500000,
+		InTarget:   100000,
 		Logger:     logger,
 		Client:     client,
 		NetParams:  params,
@@ -51,35 +52,39 @@ func CreateParams() BuilderParams {
 
 func main() {
 	bp := CreateParams()
-	//dust := NewDustBuilder(bp, 10)
 	p2pkh := NewPayToPubKeyHash(bp, 2)
 	dustBuilder := NewDustBuilder(bp, 3)
 
-	jaun := make([]TxBuilder, 2)
-	jaun[0] = p2pkh
-	jaun[1] = dustBuilder
+	msg := "Find the cost of freedom buried in the ground. Mother earth will swallow you. Lay your body down. And who knows which is which and who is who. Help. Is there anybody out there."
+	msgBytes := bytes.NewBufferString(msg).Bytes()
+	key := newWifKeyPair(bp.NetParams)
+	pklist := CreateList(msgBytes, key)
+	//pklist := CreateList([]byte{}, key, key, key)
+	multisig := NewMultiSigBuilder(bp, 1, pklist)
 
-	copies := int64(4)
+	jaun := []TxBuilder{p2pkh, dustBuilder, multisig}
+
+	copies := int64(1)
 	fanout := NewFanOutBuilder(bp, jaun, copies)
 
 	fmt.Println("======= Run summary =======")
 	fmt.Printf(fanout.Summarize())
 
-	//
-	println("Proceed? [y/n]")
-	g := "n"
+	println("Create Fanout? If no create spend from [y/n]")
+	g := "nope"
 	fmt.Scanf("%s", &g)
 	if g == "y" {
-		send(fanout, bp)
-		//resp := send(fanout, bp)
-
-		//		fmt.Println("Sent fanout with txid: ", resp)
-		//		for i := int64(0); i < copies; i++ {
-		//			resp = send(dustBuilder, bp)
-		//			fmt.Println("Sent Dust with txid: ", resp)
-		//			send(p2pkh, bp)
-		//			fmt.Println("Sent p2pkh with txid: ", resp)
-		//		}
+		resp := send(fanout, bp)
+		fmt.Println("Sent fanout with txid: ", resp)
+	}
+	for i := int64(0); i < copies; i++ {
+		resp := send(multisig, bp)
+		fmt.Println("Sent multisig with txid:\n", resp)
+		//		resp := send(p2pkh, bp)
+		//		fmt.Println(len(bp.PendingSet))
+		//		fmt.Println("Sent p2pkh with txid:\n ", resp)
+		//		resp = send(dustBuilder, bp)
+		//		fmt.Println("Sent Dust with txid:\n", resp)
 	}
 }
 

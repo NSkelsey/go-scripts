@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/conformal/btcscript"
@@ -14,7 +15,7 @@ type DustBuilder struct {
 	NumOuts int64
 }
 
-func NewDustBuilder(params BuilderParams, numOuts int64) (b *DustBuilder) {
+func NewDustBuilder(params BuilderParams, numOuts int64) *DustBuilder {
 	db := DustBuilder{
 		Params:  params,
 		NumOuts: numOuts,
@@ -49,7 +50,8 @@ func (builder *DustBuilder) Build() (*btcwire.MsgTx, error) {
 	msgtx.AddTxIn(txin)
 
 	for i := int64(0); i < builder.NumOuts; i++ {
-		addr := dataAddr(make([]byte, 0, 20), builder.Params.NetParams)
+		dumb := bytes.Repeat([]byte{66}, 20)
+		addr := dataAddr(dumb, builder.Params.NetParams)
 		addrScript, err := btcscript.PayToAddrScript(addr)
 		if err != nil {
 			return nil, err

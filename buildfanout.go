@@ -82,7 +82,7 @@ func (fanB *FanOutBuilder) Build() (*btcwire.MsgTx, error) {
 		privkey := inpParam.Wif.PrivKey.ToECDSA()
 		subscript := inpParam.TxOut.PkScript
 		var sigflag byte
-		sigflag = btcscript.SigHashAll | btcscript.SigHashAnyOneCanPay
+		sigflag = btcscript.SigHashAll
 		scriptSig, err := btcscript.SignatureScript(msgtx, i, subscript,
 			sigflag, privkey, true)
 		if err != nil {
@@ -90,6 +90,8 @@ func (fanB *FanOutBuilder) Build() (*btcwire.MsgTx, error) {
 		}
 		msgtx.TxIn[i].SignatureScript = scriptSig
 	}
+	fanB.Log(fmt.Sprintf("InVal: %d\n", sumInputs(inParamSet)))
+	fanB.Log(fmt.Sprintf("OutVal: %d\n", sumOutputs(msgtx)))
 
 	return msgtx, nil
 }
