@@ -79,27 +79,35 @@ func makeRpcClient(connCfg btcrpcclient.ConnConfig) *btcrpcclient.Client {
 	return client
 }
 
-// specificUnspent gets an unspent output with an exact amount associated with it.
-// it throws an error otherwise
-func specificUnspent(targetAmnt int64, client *btcrpcclient.Client, net *btcnet.Params) (*TxInParams, error) {
-	list, err := client.ListUnspent()
+func rpcTxPick(exact bool, targetAmnt int64, params BuilderParams) (*TxInParams, error) {
+	// selects an unspent outpoint that is funded over the minAmount
+	list, err := params.Client.ListUnspent()
 	if err != nil {
+		logger.Println("list unpsent threw")
 		return nil, err
 	}
+	if len(list) < 1 {
+		return nil, errors.New("No unspent outputs at all.")
+	}
 
-	for i := 0; i < len(list); i++ {
-		prevJson := list[i]
-		inAmnt := toSatoshi(prevJson.Amount)
-		if inAmnt == targetAmnt {
+	for _, prevJson := range list {
+		_amnt, _ := btcutil.NewAmount(prevJson.Amount)
+		amnt := int64(_amnt)
+		txid := prevJson.TxId
+
+		_, contained := params.PendingSet[txid]
+		// This unpsent is in the pending set and it either exactly equals the target or
+		// has a value above that target
+		if !contained && (exact && targetAmnt == amnt || !exact && targetAmnt <= amnt) {
 			// Found one, lets use it
-			// None of these ~should~ ever throw errors
-			prevHash, _ := btcwire.NewShaHashFromStr(prevJson.TxId)
+			prevHash, _ := btcwire.NewShaHashFromStr(txid)
 			outPoint := btcwire.NewOutPoint(prevHash, prevJson.Vout)
 			script, _ := hex.DecodeString(prevJson.ScriptPubKey)
-			txOut := btcwire.NewTxOut(inAmnt, script)
+			// None of the above ~should~ ever throw errors
+			txOut := btcwire.NewTxOut(amnt, script)
 
-			prevAddress, _ := btcutil.DecodeAddress(prevJson.Address, net)
-			wifkey, err := client.DumpPrivKey(prevAddress)
+			prevAddress, _ := btcutil.DecodeAddress(prevJson.Address, params.NetParams)
+			wifkey, err := params.Client.DumpPrivKey(prevAddress)
 			if err != nil {
 				return nil, err
 			}
@@ -108,21 +116,40 @@ func specificUnspent(targetAmnt int64, client *btcrpcclient.Client, net *btcnet.
 				OutPoint: outPoint,
 				Wif:      wifkey,
 			}
+			params.PendingSet[txid] = struct{}{}
 			return &inParams, nil
 		}
 	}
-	return nil, errors.New("Could not find a txout with specific amount.")
+	// Never found a good outpoint
+	return nil, errors.New("No txout with the right funds")
+}
+
+// specificUnspent gets an unspent output with an exact amount associated with it.
+// it throws an error otherwise. It will also check to see if the tx selected is in the
+// the pending tx set. If it is it will not use the txout
+func specificUnspent(targetAmnt int64, params BuilderParams) (*TxInParams, error) {
+	exact := true
+	out, err := rpcTxPick(exact, targetAmnt, params)
+	return out, err
+}
+
+// selectUnspent picks an unspent output that has atleast minAmount (sats) associated with it.
+// Exactly similar to specific unspent except the operator is >=
+func selectUnspent(minAmount int64, params BuilderParams) (*TxInParams, error) {
+	exact := false
+	out, err := rpcTxPick(exact, minAmount, params)
+	return out, err
 }
 
 // composeUnspents Builds out a set of TxInParams that can be used to spend minAmount of bitcoin
-func composeUnspents(minAmount int64, client *btcrpcclient.Client, net *btcnet.Params) ([]*TxInParams, int64, error) {
+func composeUnspents(minAmount int64, params BuilderParams) ([]*TxInParams, int64, error) {
 	// Arbitrary constant!
 	maxIns := 50
 
 	totalIn := int64(0)
 	inParamSet := make([]*TxInParams, 0)
 	for i := 0; i < maxIns; i++ {
-		txInParam, err := selectUnspent(minAmount/40, client, net)
+		txInParam, err := selectUnspent(params.DustAmnt, params)
 		if err != nil {
 			return nil, totalIn, err
 		}
@@ -134,48 +161,6 @@ func composeUnspents(minAmount int64, client *btcrpcclient.Client, net *btcnet.P
 	}
 	msg := fmt.Sprintf("Do not have enough coins to compose input: %d, from %d", minAmount, totalIn)
 	return inParamSet, 0, errors.New(msg)
-}
-
-// selectUnspent picks an unspent output that has atleast minAmount (sats) associated with it.
-// It throws an error otherwise
-func selectUnspent(minAmount int64, client *btcrpcclient.Client, net *btcnet.Params) (*TxInParams, error) {
-	// selects an unspent outpoint that is funded over the minAmount
-	list, err := client.ListUnspent()
-	if err != nil {
-		logger.Println("list unpsent threw")
-		return nil, err
-	}
-
-	if len(list) < 1 {
-		return nil, errors.New("No unspent outputs at all.")
-	}
-
-	for i := 0; i < len(list); i++ {
-		prevJson := list[i]
-		inAmnt := toSatoshi(prevJson.Amount)
-		if inAmnt >= minAmount {
-			// Found one, lets use it
-			// None of these ~should~ ever throw errors
-			prevHash, _ := btcwire.NewShaHashFromStr(prevJson.TxId)
-			outPoint := btcwire.NewOutPoint(prevHash, prevJson.Vout)
-			script, _ := hex.DecodeString(prevJson.ScriptPubKey)
-			txOut := btcwire.NewTxOut(inAmnt, script)
-
-			prevAddress, _ := btcutil.DecodeAddress(prevJson.Address, net)
-			wifkey, err := client.DumpPrivKey(prevAddress)
-			if err != nil {
-				return nil, err
-			}
-			inParams := TxInParams{
-				TxOut:    txOut,
-				OutPoint: outPoint,
-				Wif:      wifkey,
-			}
-			return &inParams, nil
-		}
-	}
-	// Never found a good outpoint
-	return nil, errors.New("No txout with enough funds")
 }
 
 // toHex converts a msgTx into a hex string.
@@ -201,6 +186,14 @@ func sumOutputs(tx *btcwire.MsgTx) (val int64) {
 	val = 0
 	for i := range tx.TxOut {
 		val += tx.TxOut[i].Value
+	}
+	return val
+}
+
+func sumInputs(inParamSet) (val int64) {
+	val = 0
+	for _, inpParam := range inParamSet {
+		val += inpPara.TxOut.Value
 	}
 	return val
 }
@@ -243,7 +236,7 @@ func prevOutVal(tx *btcwire.MsgTx, client *btcrpcclient.Client) (int64, error) {
 	return total, nil
 }
 
-// Converts a float bitcoin into satoshi
-func toSatoshi(m float64) int64 {
-	return int64(float64(btcutil.SatoshiPerBitcoin) * m)
+func dataAddr(raw []byte, net *btcnet.Params) btcutil.Address {
+	addr, _ := btcutil.NewAddressPubKeyHash(raw, net)
+	return addr
 }

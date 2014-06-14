@@ -5,18 +5,21 @@ import (
 	"log"
 	"os"
 
+	"github.com/conformal/btcjson"
 	"github.com/conformal/btcnet"
 	"github.com/conformal/btcrpcclient"
 	"github.com/conformal/btcwire"
 )
 
 type BuilderParams struct {
-	Fee       int64
-	DustAmnt  int64
-	InTarget  int64 // The target input a transaction must be created with
-	Logger    *log.Logger
-	Client    *btcrpcclient.Client
-	NetParams *btcnet.Params
+	Fee        int64
+	DustAmnt   int64
+	InTarget   int64 // The target input a transaction must be created with
+	Logger     *log.Logger
+	Client     *btcrpcclient.Client
+	NetParams  *btcnet.Params
+	PendingSet map[string]struct{}
+	List       []btcjson.ListUnspentResult
 }
 
 type TxBuilder interface {
@@ -26,6 +29,7 @@ type TxBuilder interface {
 	Build() (*btcwire.MsgTx, error)
 	// Log is short hand for logging in a tx builder with Param logger
 	Log(string)
+	Summarize() string
 }
 
 func CreateParams() BuilderParams {
@@ -33,28 +37,61 @@ func CreateParams() BuilderParams {
 	client, params := setupNet(btcwire.TestNet3)
 
 	bp := BuilderParams{
-		Fee:       10000,
-		DustAmnt:  546,
-		InTarget:  100000,
-		Logger:    logger,
-		Client:    client,
-		NetParams: params,
+		Fee:        10000,
+		DustAmnt:   546,
+		InTarget:   500000,
+		Logger:     logger,
+		Client:     client,
+		NetParams:  params,
+		PendingSet: make(map[string]struct{}),
+		List:       make([]btcjson.ListUnspentResult, 0),
 	}
 	return bp
 }
 
 func main() {
 	bp := CreateParams()
-	dust := NewDustBuilder(bp, 10)
+	//dust := NewDustBuilder(bp, 10)
+	p2pkh := NewPayToPubKeyHash(bp, 2)
+	dustBuilder := NewDustBuilder(bp, 3)
 
-	jaun := make([]TxBuilder, 1)
-	jaun[0] = dust
-	fanout := NewFanoutBuilder(bp, jaun, 3)
+	jaun := make([]TxBuilder, 2)
+	jaun[0] = p2pkh
+	jaun[1] = dustBuilder
 
-	msg, err := fanout.Build()
-	if err != nil {
-		fmt.Println(err)
-		return
+	copies := int64(4)
+	fanout := NewFanOutBuilder(bp, jaun, copies)
+
+	fmt.Println("======= Run summary =======")
+	fmt.Printf(fanout.Summarize())
+
+	//
+	println("Proceed? [y/n]")
+	g := "n"
+	fmt.Scanf("%s", &g)
+	if g == "y" {
+		send(fanout, bp)
+		//resp := send(fanout, bp)
+
+		//		fmt.Println("Sent fanout with txid: ", resp)
+		//		for i := int64(0); i < copies; i++ {
+		//			resp = send(dustBuilder, bp)
+		//			fmt.Println("Sent Dust with txid: ", resp)
+		//			send(p2pkh, bp)
+		//			fmt.Println("Sent p2pkh with txid: ", resp)
+		//		}
 	}
-	fmt.Println(toHex(msg))
+}
+
+func send(builder TxBuilder, params BuilderParams) *btcwire.ShaHash {
+	msg, err := builder.Build()
+	if err != nil {
+		log.Fatal(err)
+	}
+	println(toHex(msg))
+	resp, err := params.Client.SendRawTransaction(msg, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return resp
 }

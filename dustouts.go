@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/conformal/btcscript"
 	"github.com/conformal/btcwire"
 )
@@ -32,8 +34,7 @@ func (builder *DustBuilder) Build() (*btcwire.MsgTx, error) {
 	var err error
 	inparams, err = specificUnspent(
 		builder.SatNeeded(),
-		builder.Params.Client,
-		builder.Params.NetParams)
+		builder.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +49,7 @@ func (builder *DustBuilder) Build() (*btcwire.MsgTx, error) {
 	msgtx.AddTxIn(txin)
 
 	for i := int64(0); i < builder.NumOuts; i++ {
-		addr, err := newAddr(builder.Params.Client)
-		if err != nil {
-			return nil, err
-		}
+		addr := dataAddr(make([]byte, 0, 20), builder.Params.NetParams)
 		addrScript, err := btcscript.PayToAddrScript(addr)
 		if err != nil {
 			return nil, err
@@ -73,4 +71,9 @@ func (builder *DustBuilder) Build() (*btcwire.MsgTx, error) {
 
 func (b *DustBuilder) Log(s string) {
 	b.Params.Logger.Printf(s)
+}
+
+func (b *DustBuilder) Summarize() string {
+	s := "==== Dust Transaction ====\nSatNeeded:\t%d\nTxIns:\t1\nTxOuts:\t%d\n"
+	return fmt.Sprintf(s, b.SatNeeded(), b.NumOuts)
 }

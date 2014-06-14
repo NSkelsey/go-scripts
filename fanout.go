@@ -1,21 +1,23 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/conformal/btcscript"
 	"github.com/conformal/btcwire"
 )
 
-type FanoutBuilder struct {
+type FanOutBuilder struct {
 	Params   BuilderParams
 	Builders []TxBuilder
 	Copies   int64 // Number of copies to add
 }
 
-// A FanoutBuilder creates a transaction that has txouts set to the needed value
+// A FanOutBuilder creates a transaction that has txouts set to the needed value
 // for other tx builders that need those txouts as inputs
 // The number of outputs created is len(builders)*copies + 1
-func NewFanoutBuilder(params BuilderParams, builders []TxBuilder, copies int64) *FanoutBuilder {
-	fb := FanoutBuilder{
+func NewFanOutBuilder(params BuilderParams, builders []TxBuilder, copies int64) *FanOutBuilder {
+	fb := FanOutBuilder{
 		Params:   params,
 		Builders: builders,
 		Copies:   copies,
@@ -23,7 +25,7 @@ func NewFanoutBuilder(params BuilderParams, builders []TxBuilder, copies int64) 
 	return &fb
 }
 
-func (fanB *FanoutBuilder) SatNeeded() int64 {
+func (fanB *FanOutBuilder) SatNeeded() int64 {
 	sum := int64(0)
 	for _, builder := range fanB.Builders {
 		sum += builder.SatNeeded() * fanB.Copies
@@ -33,14 +35,13 @@ func (fanB *FanoutBuilder) SatNeeded() int64 {
 	return sum
 }
 
-func (fanB *FanoutBuilder) Build() (*btcwire.MsgTx, error) {
+func (fanB *FanOutBuilder) Build() (*btcwire.MsgTx, error) {
 	totalSpent := fanB.SatNeeded()
 
 	// Compose a set of Txins with enough to fund this transactions needs
 	inParamSet, totalIn, err := composeUnspents(
 		totalSpent,
-		fanB.Params.Client,
-		fanB.Params.NetParams)
+		fanB.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +81,10 @@ func (fanB *FanoutBuilder) Build() (*btcwire.MsgTx, error) {
 	for i, inpParam := range inParamSet {
 		privkey := inpParam.Wif.PrivKey.ToECDSA()
 		subscript := inpParam.TxOut.PkScript
+		var sigflag byte
+		sigflag = btcscript.SigHashAll | btcscript.SigHashAnyOneCanPay
 		scriptSig, err := btcscript.SignatureScript(msgtx, i, subscript,
-			btcscript.SigHashAll, privkey, true)
+			sigflag, privkey, true)
 		if err != nil {
 			return nil, err
 		}
@@ -89,4 +92,17 @@ func (fanB *FanoutBuilder) Build() (*btcwire.MsgTx, error) {
 	}
 
 	return msgtx, nil
+}
+
+func (fanB *FanOutBuilder) Log(msg string) {
+	fanB.Params.Logger.Println(msg)
+}
+
+func (fanB *FanOutBuilder) Summarize() string {
+	s := "==== Fanout Tx ====\nSatNeeded:\t%d\nTxIns:\t?\nTxOuts:\t%d\n"
+	s = fmt.Sprintf(s, fanB.SatNeeded(), int(fanB.Copies)*len(fanB.Builders))
+	for _, builder := range fanB.Builders {
+		s = s + builder.Summarize()
+	}
+	return s
 }
