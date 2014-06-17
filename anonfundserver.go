@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/NSkelsey/btcbuilder"
 	"github.com/conformal/btcnet"
 	"github.com/conformal/btcrpcclient"
 	"github.com/conformal/btcwire"
@@ -14,7 +15,7 @@ import (
 var client *btcrpcclient.Client
 var currnet *btcnet.Params
 var params BuilderParams = CreateParams()
-var singleBuilder *SigHashSingleBuilder = NewSigHashSingleBuilder(params)
+var singleBuilder *btcbuilder.SigHashSingleBuilder = btcbuilder.NewSigHashSingleBuilder(params)
 
 type AnonTxMessage struct {
 	Tx    string
@@ -66,14 +67,14 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		return
 		http.Error(w, "Bad", 500)
 	}
-	prevVal, err := prevOutVal(fundingtx, client)
+	prevVal, err := btcbuilder.PrevOutVal(fundingtx, client)
 	if err != nil {
 		logger.Println(err)
 		http.Error(w, "Bad", 500)
 		return
 	}
-	logger.Println(toHex(fundingtx))
-	message := AnonTxMessage{Tx: toHex(fundingtx), Value: prevVal}
+	logger.Println(btcbuilder.ToHex(fundingtx))
+	message := AnonTxMessage{Tx: btcbuilder.ToHex(fundingtx), Value: prevVal}
 	bytes, err := json.Marshal(message)
 	if err != nil {
 		http.Error(w, "Cannot serialize the tx", 500)
@@ -92,7 +93,7 @@ func check(proof ProofMessage) bool {
 func main() {
 
 	logger = log.New(os.Stdout, "", log.Ltime)
-	client, currnet = setupNet(btcwire.TestNet3)
+	client, currnet = btcbuilder.SetupNet(btcwire.TestNet3)
 	defer client.Shutdown()
 
 	http.HandleFunc("/", handler)
