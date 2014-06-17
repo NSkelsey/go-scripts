@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 
@@ -8,34 +9,59 @@ import (
 	"github.com/conformal/btcwire"
 )
 
-//
+type NullDataBuilder struct {
+	Params BuilderParms
+	Data   []byte
+	Change bool
+}
 
-func NewDust(net btcwire.BitcoinNet) *btcwire.MsgTx {
-	pickNetwork(btcwire.TestNet3)
-	client := makeRpcClient()
-	defer client.Shutdown()
+func NewNullData(params BuilderParams, data []byte, change bool) {
+	ndB := NewNullData{
+		Params: params,
+		Data:   data,
+		Change: change,
+	}
+	return &ndB
+}
 
-	oldTxOut, outpoint, wifkey := selectUnspent(client, 2000)
+func (nbD *NullDataBuilder) SatNeeded() (sum int64) {
+	sum = 0
+	if change {
+		sum = nbD.Params.InTarget
+	} else {
+		sum = nbD.Params.DustAmnt + nbD.Params.Fee
+	}
+	return sum
+}
+
+func (nbD *NullDataBuilder) Build() (*btcwire.Msgtx, error) {
+
+	utxo := selectSpecificUnspent(ndB.SatNeeded(), nbD.Params)
 
 	msgtx := btcwire.NewMsgTx()
 
+	if len(nbD.Data) > 40 {
+		return nil, errors.New("Data is too long to make this a standard tx.")
+	}
+
 	// OP Return output
-	derp := []byte("This is an attempt to see what works BLA")
-	retbuilder := btcscript.NewScriptBuilder().AddOp(btcscript.OP_RETURN).AddData(derp)
+	retbuilder := btcscript.NewScriptBuilder().AddOp(btcscript.OP_RETURN).AddData(ndB.Data)
 	op_return := btcwire.NewTxOut(0, retbuilder.Script())
 	msgtx.AddTxOut(op_return)
 
-	// change ouput
-	change := changeOutput(oldTxOut.Value, 1000, newAddr(client))
-	msgtx.AddTxOut(change)
+	if ndB.Change {
+		// change ouput
+		change := changeOutput(nbD.SatNeeded()-nbD.Params.Fee, newAddr(client))
+		msgtx.AddTxOut(change)
+	}
 
 	// funding input
-	txin := btcwire.NewTxIn(&outpoint, []byte{})
+	txin := btcwire.NewTxIn(utxo.OutPoint, []byte{})
 	msgtx.AddTxIn(txin)
 
 	// sign msgtx
-	privkey := wifkey.PrivKey.ToECDSA()
-	scriptSig, err := btcscript.SignatureScript(msgtx, 0, oldTxOut.PkScript, btcscript.SigHashAll, privkey, true)
+	privkey := utxo.Wif.PrivKey.ToECDSA()
+	scriptSig, err := btcscript.SignatureScript(msgtx, 0, utxo.TxOut.PkScript, btcscript.SigHashAll, privkey, true)
 	if err != nil {
 		log.Fatal("Signing Failed", err)
 	}
@@ -44,7 +70,15 @@ func NewDust(net btcwire.BitcoinNet) *btcwire.MsgTx {
 	return msgtx
 }
 
-func main() {
-	msgtx := build(TestNet3)
-	fmt.Printf("%s\n", toHex(msgtx))
+func (nbD *NullDataBuilder) Log(msg string) {
+	nbD.Params.Logger.Println(msg)
+}
+
+func (nbD *NullDataBuilder) Summarize() string {
+	s := "==== NullData ====\nSatNeeded:\t%d\nTxIns:\t1\nTxOuts:\t%d\nLenData:\t%d\n"
+	numouts := 1
+	if change {
+		numouts = 2
+	}
+	return fmt.Sprintf(s, nbD.SatNeeded(), numouts, len(nbD.Data))
 }
