@@ -13,6 +13,8 @@ import (
 
 var client *btcrpcclient.Client
 var currnet *btcnet.Params
+var params BuilderParams = CreateParams()
+var singleBuilder *SigHashSingleBuilder = NewSigHashSingleBuilder(params)
 
 type AnonTxMessage struct {
 	Tx    string
@@ -55,17 +57,22 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "bad proof", 405)
 		return
 	}
+
+	// use builder interface
 	// Generate the anonymous tx
-	fundingtx, err := buildSigHashSingle(client, currnet)
+	fundingtx, err := singleBuilder.Build()
 	if err != nil {
 		logger.Println(err)
+		return
 		http.Error(w, "Bad", 500)
 	}
 	prevVal, err := prevOutVal(fundingtx, client)
 	if err != nil {
 		logger.Println(err)
 		http.Error(w, "Bad", 500)
+		return
 	}
+	logger.Println(toHex(fundingtx))
 	message := AnonTxMessage{Tx: toHex(fundingtx), Value: prevVal}
 	bytes, err := json.Marshal(message)
 	if err != nil {
