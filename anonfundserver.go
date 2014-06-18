@@ -14,8 +14,14 @@ import (
 
 var client *btcrpcclient.Client
 var currnet *btcnet.Params
-var params BuilderParams = CreateParams()
+var params btcbuilder.BuilderParams = btcbuilder.BuilderParams{
+	InTarget: 110000,
+	Fee:      10000,
+	DustAmnt: 546,
+}
+
 var singleBuilder *btcbuilder.SigHashSingleBuilder = btcbuilder.NewSigHashSingleBuilder(params)
+var logger *log.Logger
 
 type AnonTxMessage struct {
 	Tx    string
@@ -92,6 +98,7 @@ func check(proof ProofMessage) bool {
 
 func main() {
 
+	params = btcbuilder.SetParams(btcwire.TestNet3, params)
 	logger = log.New(os.Stdout, "", log.Ltime)
 	client, currnet = btcbuilder.SetupNet(btcwire.TestNet3)
 	defer client.Shutdown()
