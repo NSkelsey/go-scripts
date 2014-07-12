@@ -9,27 +9,24 @@ import (
 	"github.com/NSkelsey/btcbuilder"
 	"github.com/conformal/btcnet"
 	"github.com/conformal/btcrpcclient"
+	"github.com/conformal/btcutil"
 	"github.com/conformal/btcwire"
 )
 
-var client *btcrpcclient.Client
-var currnet *btcnet.Params
-var params btcbuilder.BuilderParams = btcbuilder.BuilderParams{
-	InTarget: 110000,
-	Fee:      10000,
-	DustAmnt: 546,
-}
-
-var singleBuilder *btcbuilder.SigHashSingleBuilder = btcbuilder.NewSigHashSingleBuilder(params)
-var logger *log.Logger
+var (
+	client  *btcrpcclient.Client
+	currnet *btcnet.Params
+	params  btcbuilder.BuilderParams
+	logger  *log.Logger
+)
 
 type AnonTxMessage struct {
-	Tx    string
-	Value int64
+	Tx string
 }
 
 type ProofMessage struct {
-	Secret string
+	Secret  string
+	Address string
 }
 
 func handler(w http.ResponseWriter, req *http.Request) {
@@ -64,7 +61,14 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "bad proof", 405)
 		return
 	}
+	_, err = btcutil.DecodeAddress(proof.Address, params.NetParams)
+	if err != nil {
+		logger.Printf("Bad address: %s\n", err)
+		http.Error(w, "bad addr", 405)
+		return
+	}
 
+	singleBuilder := btcbuilder.NewToAddrBuilder(params, proof.Address)
 	// use builder interface
 	// Generate the anonymous tx
 	fundingtx, err := singleBuilder.Build()
@@ -73,14 +77,9 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		return
 		http.Error(w, "Bad", 500)
 	}
-	prevVal, err := btcbuilder.PrevOutVal(fundingtx, client)
-	if err != nil {
-		logger.Println(err)
-		http.Error(w, "Bad", 500)
-		return
-	}
+
 	logger.Println(btcbuilder.ToHex(fundingtx))
-	message := AnonTxMessage{Tx: btcbuilder.ToHex(fundingtx), Value: prevVal}
+	message := AnonTxMessage{Tx: btcbuilder.ToHex(fundingtx)}
 	bytes, err := json.Marshal(message)
 	if err != nil {
 		http.Error(w, "Cannot serialize the tx", 500)
@@ -97,11 +96,16 @@ func check(proof ProofMessage) bool {
 }
 
 func main() {
-
-	params = btcbuilder.SetParams(btcwire.TestNet3, params)
 	logger = log.New(os.Stdout, "", log.Ltime)
-	client, currnet = btcbuilder.SetupNet(btcwire.TestNet3)
-	defer client.Shutdown()
+	bp := btcbuilder.BuilderParams{
+		InTarget: 110000,
+		Fee:      10000,
+		DustAmnt: 546,
+		Logger:   logger,
+	}
+	params = btcbuilder.SetParams(btcwire.TestNet3, bp)
+
+	defer params.Client.Shutdown()
 
 	http.HandleFunc("/", handler)
 	where := "0.0.0.0:1050"
