@@ -38,8 +38,6 @@ func main() {
 	}
 	params = btcbuilder.SetParams(btcparams.Net, params)
 
-	a, _ := params.Client.GetInfo()
-	fmt.Println(a)
 	single := btcbuilder.NewPayToPubKeyHash(params, 1)
 	fmt.Println(single.Summarize())
 	list := []btcbuilder.TxBuilder{
