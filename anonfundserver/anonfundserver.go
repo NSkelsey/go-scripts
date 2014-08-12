@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -39,10 +40,10 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "GTFO", 411)
 		return
 	}
-	buf := make([]byte, req.ContentLength)
-	_, err := req.Body.Read(buf)
+
+	buf, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		log.Println("failed to read body: %s\n", err)
+		log.Printf("failed to read body: %s\n", err)
 		http.Error(w, "bad buffer", 500)
 		return
 	}
