@@ -14,7 +14,7 @@ import (
 
 	"code.google.com/p/go.crypto/ssh/terminal"
 	"github.com/NSkelsey/btcbuilder"
-	"github.com/NSkelsey/btcsubprotos/ahimsa"
+	"github.com/NSkelsey/protocol/ahimsa"
 )
 
 var (
