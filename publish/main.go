@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	board    *string = flag.String("board", "ahimsad-dev", "The board to post the bulletin in.")
+	board    *string = flag.String("board", "ahimsa-dev", "The board to post the bulletin in.")
 	cmsg     *string = flag.String("msg", "", "The message to send")
 	network  *string = flag.String("network", "TestNet3", "The network to use")
 	fee      *int    = flag.Int("fee", 50000, "Fee in satoshi to pay miners")
@@ -48,12 +48,12 @@ func main() {
 	}
 	params = btcbuilder.SetParams(btcparams.Net, params)
 
-	bltn := ahimsa.Bulletin{
-		Board:   *board,
-		Message: msg,
+	bltn, err := ahimsa.NewBulletinFromStr("fakeauth", *board, msg)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	builder := btcbuilder.NewBulletinBuilder(params, int64(*burnAmnt), bltn)
+	builder := btcbuilder.NewBulletinBuilder(params, int64(*burnAmnt), *bltn)
 
 	fmt.Println(builder.Summarize())
 	fmt.Println(btcbuilder.Send(builder, params))

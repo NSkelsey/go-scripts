@@ -1,5 +1,6 @@
 
 all:
+	make clean
 	mkdir bin
 	go build -o bin/publish publish/*.go
 	go build -o bin/anonfundserver anonfundserver/anonfundserver.go 
