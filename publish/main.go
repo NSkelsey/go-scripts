@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	topic    *string = flag.String("topic", "Let It Be Known", "The topic of the bulletin")
+	board    *string = flag.String("board", "ahimsad-dev", "The board to post the bulletin in.")
 	cmsg     *string = flag.String("msg", "", "The message to send")
 	network  *string = flag.String("network", "TestNet3", "The network to use")
 	fee      *int    = flag.Int("fee", 50000, "Fee in satoshi to pay miners")
@@ -49,7 +49,7 @@ func main() {
 	params = btcbuilder.SetParams(btcparams.Net, params)
 
 	bltn := ahimsa.Bulletin{
-		Topic:   *topic,
+		Board:   *board,
 		Message: msg,
 	}
 
