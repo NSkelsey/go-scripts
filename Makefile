@@ -1,11 +1,19 @@
 
-all:
+
+all: build
+	
+build:
 	mkdir bin
 	go build -o bin/publish publish/*.go
 	go build -o bin/anonfundserver anonfundserver/anonfundserver.go 
 	go build -o bin/gencert anonfundserver/gencert.go
 	go build -o bin/fanout fanout/*.go
 	./bin/gencert --host="localhost"
+
+with-deps:
+	go get -d -v github.com/NSkelsey/go-scripts
+	make build
+
 
 clean: 
 	rm -rf bin
