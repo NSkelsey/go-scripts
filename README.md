@@ -1,5 +1,6 @@
 go-scripts
 =========
+[![Build Status](https://travis-ci.org/NSkelsey/go-scripts.svg?branch=master)](https://travis-ci.org/NSkelsey/go-scripts)
 
 A collection of go-scripts that consume bitcoin available to the RPC user.
 
